@@ -177,6 +177,13 @@ def test_hf_ner_returns_dataframe(hf_ner):
                 f"IOB prefix 'I-' not stripped from label '{label}'"
             )
 
+        # Subword continuation markers (##) must be merged out of entity_text
+        for entity_text in result["entity_text"]:
+            assert "##" not in entity_text, (
+                f"entity_text '{entity_text}' contains '##' — subword "
+                "continuation tokens must be merged. See reading Section 8."
+            )
+
 
 def test_entity_comparison():
     """compare_ner_outputs produces counts, totals, and overlap sets."""
@@ -239,3 +246,34 @@ def test_evaluate_ner_metrics():
         assert 0.0 <= result[key] <= 1.0, f"{key} = {result[key]} not in [0, 1]"
     assert result["precision"] > 0, "Precision should be > 0 with matching entities"
     assert result["recall"] > 0, "Recall should be > 0 with matching entities"
+
+
+def test_evaluate_ner_filters_to_gold_text_ids():
+    """evaluate_ner must filter predictions to gold text_ids before scoring.
+
+    The lab spec says: "For each gold-annotated text, compare the predicted
+    entities against the gold entities." Predictions on text_ids that have
+    no gold annotations should not enter the evaluation set — they cannot
+    be true positives, and counting them as false positives produces
+    misleading order-of-magnitude precision drops on a sparse gold standard.
+    """
+    predicted = pd.DataFrame({
+        # text_id=1 has matching gold; text_id=99 has no gold entries
+        "text_id": [1, 1, 99, 99, 99],
+        "entity_text": ["IPCC", "Jordan", "Foo", "Bar", "Baz"],
+        "entity_label": ["ORG", "GPE", "ORG", "PERSON", "DATE"],
+    })
+    gold = pd.DataFrame({
+        "text_id": [1, 1],
+        "entity_text": ["IPCC", "Jordan"],
+        "entity_label": ["ORG", "GPE"],
+    })
+    result = evaluate_ner(predicted, gold)
+    # If filtered correctly: TP=2, FP=0, FN=0 -> precision=1.0
+    # If not filtered:       TP=2, FP=3, FN=0 -> precision=0.4
+    assert result["precision"] >= 0.99, (
+        f"Precision = {result['precision']:.3f}. evaluate_ner appears to "
+        "count predictions on text_ids not in gold as false positives. "
+        "Filter predicted_df to gold_df['text_id'].unique() before "
+        "computing TP/FP/FN."
+    )
