@@ -11,7 +11,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ner_pipeline import (load_data, explore_data, preprocess_text,
                           extract_spacy_entities, extract_hf_entities,
-                          compare_ner_outputs, evaluate_ner)
+                          compare_ner_outputs, evaluate_ner,
+                          extract_multilingual_entities)
 
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "climate_articles.csv")
@@ -27,6 +28,11 @@ def nlp():
 def hf_ner():
     from transformers import pipeline
     return pipeline("ner", model="dslim/bert-base-NER")
+
+
+@pytest.fixture(scope="module")
+def multilingual_nlp():
+    return spacy.load("xx_ent_wiki_sm")
 
 
 @pytest.fixture
@@ -246,6 +252,44 @@ def test_evaluate_ner_metrics():
         assert 0.0 <= result[key] <= 1.0, f"{key} = {result[key]} not in [0, 1]"
     assert result["precision"] > 0, "Precision should be > 0 with matching entities"
     assert result["recall"] > 0, "Recall should be > 0 with matching entities"
+
+
+def test_multilingual_entities_arabic_only(df, multilingual_nlp):
+    """extract_multilingual_entities filters to Arabic rows and returns
+    a properly-shaped DataFrame.
+    """
+    result = extract_multilingual_entities(df, multilingual_nlp)
+    assert result is not None, "extract_multilingual_entities returned None"
+    assert isinstance(result, pd.DataFrame), "Must return a DataFrame"
+    required_cols = {"text_id", "entity_text", "entity_label",
+                     "start_char", "end_char"}
+    assert required_cols.issubset(set(result.columns)), (
+        f"Missing columns: {required_cols - set(result.columns)}"
+    )
+
+    # All produced text_ids must correspond to Arabic rows in df
+    arabic_ids = set(df[df["language"] == "ar"]["id"].astype(int).tolist())
+    if len(result) > 0:
+        produced_ids = set(result["text_id"].astype(int).tolist())
+        non_arabic = produced_ids - arabic_ids
+        assert not non_arabic, (
+            f"extract_multilingual_entities should filter to Arabic rows. "
+            f"Got text_ids that are not Arabic: {non_arabic}"
+        )
+
+
+def test_multilingual_entities_finds_some(df, multilingual_nlp):
+    """The multilingual model should find at least a handful of entities
+    across the Arabic subset of the corpus — empty output suggests
+    filtering or pipeline call is broken.
+    """
+    result = extract_multilingual_entities(df, multilingual_nlp)
+    assert result is not None
+    assert len(result) >= 5, (
+        f"Expected >=5 entities across Arabic corpus; got {len(result)}. "
+        "Check that multilingual_nlp is being applied to row['text'] and "
+        "doc.ents is being iterated."
+    )
 
 
 def test_evaluate_ner_filters_to_gold_text_ids():
