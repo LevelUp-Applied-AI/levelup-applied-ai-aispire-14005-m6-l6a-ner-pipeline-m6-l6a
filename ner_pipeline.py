@@ -13,7 +13,7 @@ import pandas as pd
 import numpy as np
 import spacy
 from transformers import pipeline as hf_pipeline
-
+import matplotlib.pyplot as plt
 
 def load_data(filepath="data/climate_articles.csv"):
     """Load the climate articles dataset.
@@ -246,56 +246,270 @@ def evaluate_ner(predicted_df, gold_df):
          'recall': recall,   
          'f1': f1
  }
+def entity_counts_by_category(entities_df, category_df):
+    """Count entities by category based on text_id mapping.
 
+    Args:
+        entities_df: DataFrame with columns text_id, entity_text,
+                     entity_label.
+        category_df: Original DataFrame with columns id, category.
+
+    Returns:
+        Dictionary mapping category -> dict of entity_label -> count.
+    """
+    marged_df = entities_df.merge(category_df[['id', 'category']], 
+                                  left_on='text_id',
+                                    right_on='id',
+                                      how='left')
+    counts = (
+        marged_df.groupby(['category', 'entity_label']).size().unstack(fill_value=0)
+        )
+    return counts 
+def evaluate_by_category(predicted_df, gold_df, category_df):
+    """Evaluate NER performance by category.
+
+    Args:
+        predicted_df: DataFrame with columns text_id, entity_text,
+                      entity_label.
+        gold_df: DataFrame with columns text_id, entity_text,
+                 entity_label.
+        category_df: Original DataFrame with columns id, category.
+
+    Returns:
+        Dictionary mapping category -> dict with keys 'precision',
+        'recall', 'f1' for that category.
+    """
+    gold_with_category = gold_df.merge(category_df[['id', 'category']],
+                                      left_on='text_id',
+                                      right_on='id',
+                                      how='left')
+    results = {}
+    for category in gold_with_category['category'].dropna().unique():
+        category_gold = gold_with_category[gold_with_category['category'] == category]
+        category_predicted = predicted_df[predicted_df['text_id'].isin(category_gold['text_id'])]
+        metrics = evaluate_ner(category_predicted, category_gold)
+        results[category] = metrics 
+    return results
+def plot_entity_counts_by_category(counts_df,output_path="entity_counts_by_category.png"):
+    """Plot entity counts by category as a stacked bar chart.
+
+    Args:
+        counts_df: DataFrame with categories as index and entity labels as columns.
+        output_path: File path to save the plot image.
+    """
+
+    plt.figure(figsize=(10, 6))
+    plt.imshow(counts_df, aspect='auto')
+    plt.xticks(range(len(counts_df.columns)), counts_df.columns, rotation=45)
+    plt.yticks(range(len(counts_df.index)), counts_df.index)    
+    plt.colorbar(label='Entity Count')
+    plt.title('Entity Counts by Category')
+    plt.xlabel('Entity Label')
+    plt.ylabel('Category')
+    for i in range(counts_df.shape[0]):
+        for j in range(counts_df.shape[1]):
+            plt.text(j, i, counts_df.iloc[i, j], ha='center', va='center')
+
+
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
+def normalize_entity_label(entity_text):
+    entity_map={
+        "UN":"United Nations",
+        "IPCC":"Intergovernmental Panel on Climate Change",
+        "United Nations": "United Nations",
+        "IPCC": "IPCC",
+        "COP28": "COP28",
+        "UAE": "United Arab Emirates",
+        "United Arab Emirates": "United Arab Emirates",
+    }
+    clean_text = str(entity_text).strip()
+    return entity_map.get(clean_text, clean_text)
+def normalize_entities(entities_df):
+    """Normalize entity labels to a consistent set.
+
+    Args:
+        entity_df: DataFrame with columns text_id, entity_text,
+                   entity_label.
+
+    Returns:
+        DataFrame with normalized entity_label values.
+    """
+    normalize_df = entities_df.copy()
+    normalize_df['entity_label'] = normalize_df['entity_text'].apply(normalize_entity_label)
+    return normalize_df
+
+def entity_overlap(span1, span2):
+    start1, end1 = span1
+    start2, end2 = span2
+    return max(start1, start2) < min(end1, end2)
+
+
+def build_entity_spans(df):
+    return [
+        (row["text_id"], row["entity_text"], row["entity_label"],
+         row["start_char"], row["end_char"])
+        for _, row in df.iterrows()
+    ]
+
+
+def evaluate_ner_advanced(predicted_df, gold_df):
+    predicted = build_entity_spans(predicted_df)
+    gold = build_entity_spans(gold_df)
+
+    tp_exact = 0
+    tp_partial = 0
+    tp_type_agnostic = 0
+
+    boundary_errors = 0
+    type_errors = 0
+    missing = 0
+    spurious = 0
+
+    matched_pred = set()
+    matched_gold = set()
+
+    for i, g in enumerate(gold):
+        g_id, g_text, g_label, g_start, g_end = g
+        found_match = False
+
+        for j, p in enumerate(predicted):
+            p_id, p_text, p_label, p_start, p_end = p
+
+            if g_id != p_id:
+                continue
+
+            # Exact match
+            if (g_text == p_text) and (g_label == p_label):
+                tp_exact += 1
+                matched_pred.add(j)
+                matched_gold.add(i)
+                found_match = True
+                break
+
+            # Partial match (overlap)
+            if entity_overlap((g_start, g_end), (p_start, p_end)):
+                if g_label == p_label:
+                    tp_partial += 1
+                else:
+                    type_errors += 1
+
+                tp_type_agnostic += 1
+                matched_pred.add(j)
+                matched_gold.add(i)
+                found_match = True
+                break
+
+        if not found_match:
+            missing += 1
+
+    for j in range(len(predicted)):
+        if j not in matched_pred:
+            spurious += 1
+
+    precision = tp_exact / (tp_exact + spurious) if (tp_exact + spurious) > 0 else 0
+    recall = tp_exact / (tp_exact + missing) if (tp_exact + missing) > 0 else 0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+
+    return {
+        "precision_exact": precision,
+        "recall_exact": recall,
+        "f1_exact": f1,
+        "tp_exact": tp_exact,
+        "tp_partial": tp_partial,
+        "tp_type_agnostic": tp_type_agnostic,
+        "errors": {
+            "missing": missing,
+            "spurious": spurious,
+            "type_errors": type_errors
+        }
+    }
 
 if __name__ == "__main__":
-    # Load spaCy and HF models once, reuse across functions
     nlp = spacy.load("en_core_web_sm")
     hf_ner = hf_pipeline("ner", model="dslim/bert-base-NER")
 
-    # Load and explore
     df = load_data()
-    if df is not None:
-        summary = explore_data(df)
-        if summary is not None:
-            print(f"Shape: {summary['shape']}")
-            print(f"Languages: {summary['lang_counts']}")
-            print(f"Categories: {summary['category_counts']}")
-            print(f"Text length (words): {summary['text_length_stats']}")
 
-        # Preprocess a sample to verify your function
-        sample_row = df[df["language"] == "en"].iloc[0]
-        sample_tokens = preprocess_text(sample_row["text"], nlp)
-        if sample_tokens is not None:
-            print(f"\nSample preprocessed tokens: {sample_tokens[:10]}")
+    summary = explore_data(df)
+    print(f"Shape: {summary['shape']}")
+    print(f"Languages: {summary['lang_counts']}")
+    print(f"Categories: {summary['category_counts']}")
+    print(f"Text length (words): {summary['text_length_stats']}")
 
-        # spaCy NER across the English corpus
-        spacy_entities = extract_spacy_entities(df, nlp)
-        if spacy_entities is not None:
-            print(f"\nspaCy entities: {len(spacy_entities)} total")
+    sample_row = df[df["language"] == "en"].iloc[0]
+    sample_tokens = preprocess_text(sample_row["text"], nlp)
+    print(f"\nSample preprocessed tokens: {sample_tokens[:10]}")
 
-        # HF NER across the English corpus
-        hf_entities = extract_hf_entities(df, hf_ner)
-        if hf_entities is not None:
-            print(f"HF entities: {len(hf_entities)} total")
+    print("\nInspecting one spaCy example:")
+    doc = nlp(sample_row["text"])
+    for ent in doc.ents:
+        print(ent.text, "->", ent.label_)
 
-        # Compare the two systems
-        if spacy_entities is not None and hf_entities is not None:
-            comparison = compare_ner_outputs(spacy_entities, hf_entities)
-            if comparison is not None:
-                print(f"\nBoth systems agreed on {len(comparison['both'])} entities")
-                print(f"spaCy-only: {len(comparison['spacy_only'])}")
-                print(f"HF-only: {len(comparison['hf_only'])}")
+    spacy_entities = extract_spacy_entities(df, nlp)
+    print(f"\nspaCy entities: {len(spacy_entities)} total")
 
-        # Evaluate against gold standard
+    hf_entities = extract_hf_entities(df, hf_ner)
+    print(f"HF entities: {len(hf_entities)} total")
+
+    comparison = compare_ner_outputs(spacy_entities, hf_entities)
+    print(f"\nBoth systems agreed on {len(comparison['both'])} entities")
+    print(f"spaCy-only: {len(comparison['spacy_only'])}")
+    print(f"HF-only: {len(comparison['hf_only'])}")
+
     gold = pd.read_csv("data/gold_entities.csv")
 
-    if spacy_entities is not None:
-        metrics = evaluate_ner(spacy_entities, gold)
-        if metrics is not None:
-             print(f"\nspaCy evaluation: {metrics}")
+    spacy_metrics = evaluate_ner(spacy_entities, gold)
+    print(f"\nspaCy evaluation: {spacy_metrics}")
 
-    if hf_entities is not None:
-         hf_metrics = evaluate_ner(hf_entities, gold)
-         if hf_metrics is not None:
-             print(f"Hugging Face evaluation: {hf_metrics}")
+    hf_metrics = evaluate_ner(hf_entities, gold)
+    print(f"Hugging Face evaluation: {hf_metrics}")
+
+    print("\nTier 1 Challenge: Entity Counts by Category")
+
+    spacy_category_counts = entity_counts_by_category(spacy_entities, df)
+    print("\nspaCy entity counts by category:")
+    print(spacy_category_counts)
+
+    hf_category_counts = entity_counts_by_category(hf_entities, df)
+    print("\nHugging Face entity counts by category:")
+    print(hf_category_counts)
+
+    print("\nspaCy evaluation by category:")
+    spacy_category_metrics = evaluate_by_category(spacy_entities, gold, df)
+    print(spacy_category_metrics)
+
+    print("\nHugging Face evaluation by category:")
+    hf_category_metrics = evaluate_by_category(hf_entities, gold, df)
+    print(hf_category_metrics)
+
+    plot_entity_counts_by_category(
+        spacy_category_counts,
+        "spacy_entity_counts_by_category.png"
+    )
+
+    plot_entity_counts_by_category(
+        hf_category_counts,
+        "hf_entity_counts_by_category.png"
+    )
+
+    print("\nTier 2 Challenge: Entity Normalization")
+
+    normalized_spacy_entities = normalize_entities(spacy_entities)
+    print("\nNormalized spaCy entities sample:")
+    print(normalized_spacy_entities.head())
+
+    normalized_hf_entities = normalize_entities(hf_entities)
+    print("\nNormalized Hugging Face entities sample:")
+    print(normalized_hf_entities.head())
+
+    print("\nTier 3 Challenge: Advanced NER Evaluation")
+
+    spacy_adv = evaluate_ner_advanced(spacy_entities, gold)
+    print("\nspaCy advanced evaluation:")
+    print(spacy_adv)
+
+    hf_adv = evaluate_ner_advanced(hf_entities, gold)
+    print("\nHugging Face advanced evaluation:")
+    print(hf_adv)
