@@ -127,6 +127,12 @@ def evaluate_ner(predicted_df, gold_df):
     true positive if both the entity text and label match a gold entry
     for the same text_id.
 
+    Important: filter `predicted_df` to the set of text_ids in
+    `gold_df` before counting. Predictions on texts that have no gold
+    annotations cannot be true positives — counting them as false
+    positives produces misleading order-of-magnitude precision drops
+    on a sparse gold standard.
+
     Args:
         predicted_df: DataFrame with columns text_id, entity_text,
                       entity_label.
@@ -136,8 +142,36 @@ def evaluate_ner(predicted_df, gold_df):
     Returns:
         Dictionary with keys: 'precision', 'recall', 'f1' (floats 0-1).
     """
-    # TODO: Match predicted entities to gold entities by text_id +
+    # TODO: Filter predicted_df to gold_df['text_id'].unique();
+    #       match remaining predictions to gold entities by text_id +
     #       entity_text + entity_label, compute precision/recall/F1
+    pass
+
+
+def extract_multilingual_entities(df, multilingual_nlp):
+    """Extract named entities from Arabic-language texts using a
+    multilingual spaCy model.
+
+    Run the *English* spaCy model on Arabic text and you will see
+    garbage output — `en_core_web_sm` is English-only and produces
+    spurious or empty results on non-English scripts. The fix is a
+    multilingual model (`xx_ent_wiki_sm`) that was trained on the
+    multilingual Wikipedia entity dataset and handles Arabic, Chinese,
+    French, and many other languages.
+
+    Args:
+        df: DataFrame with columns id, text, language, ...
+        multilingual_nlp: A loaded spaCy multilingual Language object
+            (e.g., `xx_ent_wiki_sm`).
+
+    Returns:
+        DataFrame with columns: text_id, entity_text, entity_label,
+        start_char, end_char.
+    """
+    # TODO: Filter df to Arabic rows (language == 'ar'), process each
+    #       text with multilingual_nlp, collect entities into rows,
+    #       return as a DataFrame. Use the same column structure as
+    #       extract_spacy_entities and extract_hf_entities.
     pass
 
 
@@ -145,6 +179,7 @@ if __name__ == "__main__":
     # Load spaCy and HF models once, reuse across functions
     nlp = spacy.load("en_core_web_sm")
     hf_ner = hf_pipeline("ner", model="dslim/bert-base-NER")
+    multilingual_nlp = spacy.load("xx_ent_wiki_sm")
 
     # Load and explore
     df = load_data()
@@ -186,3 +221,8 @@ if __name__ == "__main__":
             metrics = evaluate_ner(spacy_entities, gold)
             if metrics is not None:
                 print(f"\nspaCy evaluation: {metrics}")
+
+        # Task 7: Arabic NER with multilingual model
+        arabic_entities = extract_multilingual_entities(df, multilingual_nlp)
+        if arabic_entities is not None:
+            print(f"\nArabic entities (multilingual model): {len(arabic_entities)} total")
