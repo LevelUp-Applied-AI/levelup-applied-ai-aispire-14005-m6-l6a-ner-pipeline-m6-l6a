@@ -20,7 +20,7 @@ Complete the seven functions in `ner_pipeline.py`:
 1. `load_data(filepath)` — Load the climate articles dataset
 2. `explore_data(df)` — Return a summary dict (shape, language/category counts, text length stats)
 3. `preprocess_text(text, nlp)` — NFC-normalize and return lowercased lemmas using the injected spaCy pipeline
-4. `extract_spacy_entities(df, nlp)` — Extract entities using spaCy NER
+4. `extract_spacy_entities(df, nlp)` — Extracْt entities using spaCy NER
 5. `extract_hf_entities(df, ner_pipeline)` — Extract entities using Hugging Face NER (merge `##` subwords and strip `B-`/`I-` IOB prefix)
 6. `compare_ner_outputs(spacy_df, hf_df)` — Entity counts per system plus `both`/`spacy_only`/`hf_only` overlap sets
 7. `evaluate_ner(predicted_df, gold_df)` — Compute entity-level precision, recall, F1
@@ -39,3 +39,31 @@ Complete the seven functions in `ner_pipeline.py`:
 This repository is provided for educational use only. See [LICENSE](LICENSE) for terms.
 
 You may clone and modify this repository for personal learning and practice, and reference code you wrote here in your professional portfolio. Redistribution outside this course is not permitted.
+## NER Pipeline Evaluation Summary
+
+### 1. Entity Count Summary
+This table compares the total number of entities detected by spaCy and Hugging Face (BERT).
+
+| Metric | spaCy (en_core_web_sm) | Hugging Face (bert-base-NER) |
+| :--- | :--- | :--- |
+| **Total Entities Found** | **1202** | **606** |
+| **Agreed Entities** | - | **294** |
+| **System-Specific (Unique)** | 894 (spaCy Only) | 284 (HF Only) |
+
+---
+
+### 2. Performance Metrics (Against Gold Standard)
+Evaluation against the `gold_entities.csv` dataset for spaCy:
+
+| Metric | Value |
+| :--- | :--- |
+| **Precision** | 0.0391 (3.91%) |
+| **Recall** | 0.6812 (68.12%) |
+| **F1-Score** | 0.0739 (7.39%) |
+
+---
+
+### 3. Brief Analysis
+* **Extraction Volume:** spaCy extracted significantly more entities than Hugging Face. This is primarily due to spaCy’s broader entity coverage (including DATE, CARDINAL, and MONEY), whereas the BERT model used is specialized for four main categories (PER, ORG, LOC, MISC).
+* **System Agreement:** Both systems agreed on 294 entities (e.g., "IPCC", "Dubai"). The divergence often stems from BERT’s subword tokenization handling complex terms differently than spaCy’s approach.
+* **Evaluation Insights:** spaCy achieved a high **Recall (68%)**, indicating it captured a large portion of the gold-standard entities. However, the **Precision is low**, which suggests a high number of label mismatches or the inclusion of non-relevant entities.
