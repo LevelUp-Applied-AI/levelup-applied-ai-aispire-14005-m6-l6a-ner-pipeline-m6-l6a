@@ -7,13 +7,12 @@ Build and compare Named Entity Recognition (NER) pipelines using spaCy and Huggi
 ## Setup
 
 ```bash
-pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 python -m spacy download xx_ent_wiki_sm
 ```
 
-The Hugging Face NER pipeline runs on PyTorch; we install the CPU wheel explicitly so the download stays small. `requirements.txt` intentionally omits `torch`. The spaCy English model is ~12 MB; the multilingual model (`xx_ent_wiki_sm`) is ~11 MB. The first run of the HF NER model will download ~250 MB of model weights — this is a one-time download.
+The Hugging Face NER pipeline uses PyTorch. `torch` is listed in `requirements.txt` (version 2.4 or higher) and `pip install` will download the correct version for your computer automatically. The spaCy English model is ~12 MB; the multilingual model (`xx_ent_wiki_sm`) is ~11 MB. The first time you run the Hugging Face NER model, ~250 MB of model files will be downloaded and cached (saved) on your computer. After the first time, the model loads from the cache on your computer.
 
 ## Tasks
 
