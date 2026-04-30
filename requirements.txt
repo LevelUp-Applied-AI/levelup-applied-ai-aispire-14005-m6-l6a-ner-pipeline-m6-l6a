@@ -1,6 +1,6 @@
 torch>=2.2,<3.0
 spacy>=3.5
-transformers>=4.30
+transformers>=4.30,<4.50
 pandas
-numpy
+numpy<2
 pytest
