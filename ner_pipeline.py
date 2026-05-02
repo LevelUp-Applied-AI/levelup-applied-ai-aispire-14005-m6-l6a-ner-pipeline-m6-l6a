@@ -438,6 +438,7 @@ if __name__ == "__main__":
     print(f"Categories: {summary['category_counts']}")
     print(f"Text length (words): {summary['text_length_stats']}")
 
+    print(df[df['language'] == 'en'])
     sample_row = df[df["language"] == "en"].iloc[0]
     sample_tokens = preprocess_text(sample_row["text"], nlp)
     print(f"\nSample preprocessed tokens: {sample_tokens[:10]}")

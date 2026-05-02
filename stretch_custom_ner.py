@@ -25,6 +25,7 @@ def get_climate_patterns():
         {"label": "CLIMATE_CONCEPT", "pattern": "net zero"},
         {"label": "CLIMATE_CONCEPT", "pattern": "fossil fuels"},
     ]
+
 def bulid_nlp_with_ruler(position="before"):
     nlp = spacy.load("en_core_web_sm")
     if "entity_ruler" in nlp.pipe_names:
@@ -37,6 +38,7 @@ def bulid_nlp_with_ruler(position="before"):
 
     ruler.add_patterns(get_climate_patterns())
     return nlp
+
 def extract_entities(df, nlp):
     rows = []
 
@@ -55,6 +57,7 @@ def extract_entities(df, nlp):
             })
 
     return pd.DataFrame(rows)
+
 def compare_counts(base_df,custom_df):
     print("\nBase entity counts:")
     print(base_df["entity_label"].value_counts())
@@ -64,6 +67,7 @@ def compare_counts(base_df,custom_df):
 
     print("\nTotal base entities:", len(base_df))
     print("Total custom entities:", len(custom_df))
+
 def evaluate_standard_only(predicted_df, gold_df):
     predicted_df = predicted_df[predicted_df["entity_label"].isin(STANDARD_ENTITIES)]
     gold_df = gold_df[gold_df["entity_label"].isin(STANDARD_ENTITIES)]
@@ -84,6 +88,7 @@ def evaluate_standard_only(predicted_df, gold_df):
         "recall": recall,
         "f1": f1,
     }
+## commit 
     print("\nStandard Entity Evaluation:")
     print(f"Precision: {precision:.4f}")
     print(f"Recall: {recall:.4f}")
